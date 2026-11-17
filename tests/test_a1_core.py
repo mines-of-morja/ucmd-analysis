@@ -38,13 +38,10 @@ def test_fft_msd_equals_the_direct_sum_and_the_ballistic_case() -> None:
 
 
 def spec_doc(n_ions: int, box: float) -> dict:
-    ion = lambda q, mass: {  # noqa: E731
-        "formal_charge_e": q,
-        "atoms": [
-            {"name": "X", "element": "Li" if q > 0 else "F", "mass_amu": mass, "charge_e": 0.8 * q}
-        ],  # fmt: skip
-        "bonds": [],
-    }
+    def ion(q: int, mass: float) -> dict:
+        atom = {"name": "X", "element": "Li" if q > 0 else "F", "mass_amu": mass}
+        return {"formal_charge_e": q, "atoms": [{**atom, "charge_e": 0.8 * q}], "bonds": []}
+
     return {
         "atom_count": 2 * n_ions,
         "cell_nm": [[box, 0, 0], [0, box, 0], [0, 0, box]],
