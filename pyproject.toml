@@ -17,10 +17,13 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Chemistry",
     "Topic :: Scientific/Engineering :: Physics",
 ]
-dependencies = []
+dependencies = ["numpy>=1.26", "h5py>=3.10"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "ruff>=0.6"]
+
+[project.scripts]
+ucmd-analyze = "ucmd_analysis.cli:main"
 
 [tool.hatch.version]
 path = "src/ucmd_analysis/__init__.py"
@@ -39,3 +42,4 @@ target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B", "NPY", "RUF"]
+ignore = ["RUF001", "RUF002", "RUF003"]  # Greek letters and dashes in physics text
