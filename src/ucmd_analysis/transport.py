@@ -11,6 +11,9 @@
   κ = κ_NE + e²(z₊² L₊₊^d + z₋² L₋₋^d + 2 z₊z₋ L₊₋) exactly, block by block, with the same fit
   window. A negative distinct sum (ionicity < 1) means correlated ion motion lowers κ; which
   term dominates tells ion pairing (L₊₋ > 0) from like-ion anticorrelation.
+- Finite size (optional, cubic boxes only): with a viscosity η, the self-diffusion coefficients
+  are also reported corrected, D∞ = D_PBC + k_B T ξ/(6π η L) (Yeh & Hummer 2004). η is an input
+  whose source the caller records; the collective L_ij are not corrected.
 - Charges: z are the formal charges (±1) unless `charges="scaled"`, then the force field's
   (scaled by ζ). Which one a reference used must be checked (validation plan, pitfall).
 
@@ -53,9 +56,17 @@ def beta(lags_ps: np.ndarray, msd: np.ndarray) -> np.ndarray:
 
 def transport(traj: Trajectory, temperature_K: float, cation: str, anion: str, *,
               n_blocks: int = 5, window: FitWindow | None = None,
-              charges: str = "formal") -> dict:  # fmt: skip
+              charges: str = "formal", viscosity_Pa_s: float | None = None) -> dict:  # fmt: skip
     """D of every species, L_ij, κ, t₊ (COM frame), κ_NE and the ionicity, with block errors."""
     window = window or FitWindow()
+    if viscosity_Pa_s is not None:
+        if not viscosity_Pa_s > 0:
+            raise ValueError("the viscosity must be positive")
+        h = traj.boxes_nm
+        off = h - np.einsum("fii->fi", h)[:, :, None] * np.eye(3)
+        edges = np.einsum("fii->fi", h)
+        if np.abs(off).max() > 1e-9 or np.ptp(edges, axis=1).max() > 1e-6 * edges.max():
+            raise ValueError("the Yeh–Hummer correction here is for cubic boxes only")
     dt = np.diff(traj.times_ps)
     if len(dt) == 0 or not np.allclose(dt, dt[0], rtol=1e-6):
         raise ValueError("frames must be equally spaced")
@@ -81,6 +92,10 @@ def transport(traj: Trajectory, temperature_K: float, cation: str, anion: str, *
             m = self_msd(com[n][block])  # nm²
             d[n] = slope(lags, m, window) / 6.0 * c.NM2_PER_PS_IN_M2_PER_S
             add(f"D_{n}_m2_per_s", d[n])
+            if viscosity_Pa_s is not None:
+                edge_m = volume_m3 ** (1 / 3)
+                shift = kt * c.YEH_HUMMER_XI_CUBIC / (6 * np.pi * viscosity_Pa_s * edge_m)
+                add(f"D_{n}_YH_m2_per_s", d[n] + shift)
         sums = {n: com[n][block].sum(axis=1) for n in ions}  # (frames, 3) nm
         lij, lself = {}, {}
         for a, b in ((cation, cation), (anion, anion), (cation, anion)):
@@ -119,6 +134,7 @@ def transport(traj: Trajectory, temperature_K: float, cation: str, anion: str, *
         "blocks": n_blocks,
         "fit_window_fraction": [window.start, window.stop],
         "charges": charges,
+        "viscosity_Pa_s": viscosity_Pa_s,
         "z": z,
     }
     return out

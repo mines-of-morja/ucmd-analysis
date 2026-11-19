@@ -64,6 +64,8 @@ def main(argv: list[str] | None = None) -> int:
     t.add_argument("--blocks", type=int, default=5)
     t.add_argument("--fit", type=float, nargs=2, default=(0.1, 0.5))
     t.add_argument("--charges", choices=["formal", "scaled"], default="formal")
+    t.add_argument("--viscosity-mPa-s", type=float, default=None,
+                   help="adds Yeh–Hummer-corrected D; record the source of η")  # fmt: skip
     r.add_argument("--a", required=True)
     r.add_argument("--b", required=True)
     r.add_argument("--r-max-nm", type=float, default=1.0)
@@ -89,6 +91,7 @@ def main(argv: list[str] | None = None) -> int:
         out = transport(
             traj, args.temperature_K, args.cation, args.anion, n_blocks=args.blocks,
             window=FitWindow(*args.fit), charges=args.charges,
+            viscosity_Pa_s=None if args.viscosity_mPa_s is None else args.viscosity_mPa_s * 1e-3,
         )  # fmt: skip
     elif args.command == "rdf":
         a, b = _group(traj.system, args.a), _group(traj.system, args.b)

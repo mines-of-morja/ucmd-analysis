@@ -97,6 +97,13 @@ def test_uncorrelated_random_walkers_give_nernst_einstein(tmp_path: Path) -> Non
     assert sum(parts) == pytest.approx(out["kappa_S_per_m"]["mean"], rel=1e-9)
     assert sum(parts[:2]) == pytest.approx(out["kappa_NE_S_per_m"]["mean"], rel=1e-9)
     assert abs(sum(parts[2:])) < 0.15 * out["kappa_NE_S_per_m"]["mean"]
+    # Yeh–Hummer: D∞ − D_PBC = k_B T ξ/(6π η L), here L = 5 nm, η = 1 mPa s, T = 300 K
+    yh = transport(traj, 300.0, "Li", "A", window=FitWindow(0.05, 0.3), viscosity_Pa_s=1e-3)
+    shift = c.BOLTZMANN_J_PER_K * 300 * 2.837297 / (6 * np.pi * 1e-3 * box * c.NM_IN_M)
+    # abs=0: pytest.approx allows 1e-12 absolute by default, as large as these values
+    diff = yh["D_Li_YH_m2_per_s"]["mean"] - yh["D_Li_m2_per_s"]["mean"]
+    assert diff == pytest.approx(shift, rel=1e-9, abs=0)
+    assert shift == pytest.approx(1.2469e-10, rel=1e-4, abs=0)  # 4.1419e-21·2.8373/9.4248e-11
     scaled = transport(traj, 300.0, "Li", "A", charges="scaled", window=FitWindow(0.05, 0.3))
     ratio = scaled["kappa_S_per_m"]["mean"] / out["kappa_S_per_m"]["mean"]
     assert ratio == pytest.approx(0.8**2, rel=1e-9)  # κ ∝ z²: ζ² for scaled charges

@@ -17,3 +17,6 @@ M2_PER_S_IN_CM2_PER_S: Final = 1e4
 S_PER_M_IN_MS_PER_CM: Final = 10.0  # 1 S/m = 10 mS/cm
 AMU_IN_G: Final = 1.0 / AVOGADRO_PER_MOL  # 1 amu = 1 g/mol / N_A
 NM3_IN_CM3: Final = 1e-21
+# Madelung-like constant of the Yeh–Hummer correction for a cubic box (dimensionless):
+# D∞ = D_PBC + k_B T ξ / (6π η L). Yeh & Hummer, J. Phys. Chem. B 108, 15873 (2004).
+YEH_HUMMER_XI_CUBIC: Final = 2.837297

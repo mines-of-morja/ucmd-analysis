@@ -10,7 +10,7 @@ not depend on the engine that produced the trajectory.
 
 | Command | What it gives |
 |---|---|
-| `ucmd-analyze transport TRAJ.h5 --temperature-K T` | D of every species; Onsager L₊₊, L₋₋, L₊₋; κ, κ_NE, ionicity, t₊ (COM frame); κ split into self and distinct parts |
+| `ucmd-analyze transport TRAJ.h5 --temperature-K T [--viscosity-mPa-s η]` | D of every species (Yeh–Hummer-corrected with η); Onsager L₊₊, L₋₋, L₊₋; κ, κ_NE, ionicity, t₊ (COM frame); κ split into self and distinct parts |
 | `ucmd-analyze rdf TRAJ.h5 --a Li:Li --b EC:O:1` | g(r), first peak, coordination number |
 | `ucmd-analyze density TRAJ.h5` | density |
 | `ucmd-analyze clusters TRAJ.h5` | Li⁺–PF₆⁻ cluster populations (free, pairs, triple ions, …) |
@@ -21,8 +21,8 @@ Every number carries a block error (`--blocks`, default 5). Contact cutoffs defa
 minimum of g(r) and are reported. Atom groups are `MOLECULE:ELEMENT[:BONDS]`, e.g. `EC:O:1` for
 the carbonyl oxygen. Output is JSON.
 
-**Planned** (PLAN.md, track A): Green–Kubo Onsager coefficients, the finite-size (Yeh–Hummer)
-correction, reference-frame transformations (solvent and volume frames).
+**Planned** (PLAN.md, track A): Green–Kubo Onsager coefficients, reference-frame
+transformations (solvent and volume frames).
 
 ## Development
 
