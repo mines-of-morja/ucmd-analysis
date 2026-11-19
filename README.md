@@ -5,17 +5,24 @@ computes structure (RDFs, coordination, ion association), self-diffusion, and On
 coefficients, giving conductivity and transference numbers, each with an uncertainty. It does
 not depend on the engine that produced the trajectory.
 
-**Status:** Phase 0 skeleton. Package layout and checks only. Plan and shared spec:
+**Status:** A1 core on branch `a1`. Plan and shared spec:
 [UnitcellMD](https://github.com/mines-of-morja/UnitcellMD).
 
-**Planned** (PLAN.md, track A):
+| Command | What it gives |
+|---|---|
+| `ucmd-analyze transport TRAJ.h5 --temperature-K T` | D of every species; Onsager L₊₊, L₋₋, L₊₋; κ, κ_NE, ionicity, t₊ (COM frame); κ split into self and distinct parts |
+| `ucmd-analyze rdf TRAJ.h5 --a Li:Li --b EC:O:1` | g(r), first peak, coordination number |
+| `ucmd-analyze density TRAJ.h5` | density |
+| `ucmd-analyze clusters TRAJ.h5` | Li⁺–PF₆⁻ cluster populations (free, pairs, triple ions, …) |
+| `ucmd-analyze shell TRAJ.h5 --b EC:O:1 --b EMC:O:1 --b PF6:P` | first-shell composition of Li⁺ |
+| `ucmd-analyze residence TRAJ.h5 --b EC:O:1` | intermittent and continuous residence times |
 
-- readers;
-- molecular centres of mass and the barycentric frame;
-- RDF, MSD with finite-size correction;
-- Onsager L_ij in Einstein and Green–Kubo form, reference-frame transformations;
-- block and replica statistics;
-- then the reproduction of Lehnert et al. 2025 (J. Electrochem. Soc. 172, 050523).
+Every number carries a block error (`--blocks`, default 5). Contact cutoffs default to the first
+minimum of g(r) and are reported. Atom groups are `MOLECULE:ELEMENT[:BONDS]`, e.g. `EC:O:1` for
+the carbonyl oxygen. Output is JSON.
+
+**Planned** (PLAN.md, track A): Green–Kubo Onsager coefficients, the finite-size (Yeh–Hummer)
+correction, reference-frame transformations (solvent and volume frames).
 
 ## Development
 
