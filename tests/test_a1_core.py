@@ -92,9 +92,51 @@ def test_uncorrelated_random_walkers_give_nernst_einstein(tmp_path: Path) -> Non
     lpm = out["L_pm"]
     assert abs(lpm["mean"]) < 3 * lpm["sem"] + 0.05 * out["L_pp"]["mean"]
     assert 0.0 < out["t_plus_COM"]["mean"] < 1.0
+    keys = ("self_cation", "self_anion", "distinct_pp", "distinct_mm", "distinct_pm")
+    parts = [out[f"kappa_{k}_S_per_m"]["mean"] for k in keys]
+    assert sum(parts) == pytest.approx(out["kappa_S_per_m"]["mean"], rel=1e-9)
+    assert sum(parts[:2]) == pytest.approx(out["kappa_NE_S_per_m"]["mean"], rel=1e-9)
+    assert abs(sum(parts[2:])) < 0.15 * out["kappa_NE_S_per_m"]["mean"]
     scaled = transport(traj, 300.0, "Li", "A", charges="scaled", window=FitWindow(0.05, 0.3))
     ratio = scaled["kappa_S_per_m"]["mean"] / out["kappa_S_per_m"]["mean"]
     assert ratio == pytest.approx(0.8**2, rel=1e-9)  # κ ∝ z²: ζ² for scaled charges
+
+
+def test_ion_pairs_moving_together_show_up_in_the_cation_anion_term(tmp_path: Path) -> None:
+    """D1: each Li–A pair shares a random walk (D_c) on top of its own: L₊₋ = N D_c/(k_B T V),
+    so κ_d,+− = −2e² N D_c/(k_B T V), while the like-ion distinct terms vanish.
+
+    In a box of ions only, the barycentric frame ties m₊ΣΔr₊ to −m₋ΣΔr₋ and swamps this signal;
+    in an electrolyte the solvent carries most of the mass. One heavy static particle plays the
+    solvent here and pins the barycentre."""
+    rng = np.random.default_rng(11)
+    n, frames, dt, box = 100, 20000, 0.1, 5.0
+    d_c, d_li, d_a = 0.001, 0.002, 0.0005  # nm²/ps
+    common = rng.normal(0, np.sqrt(2 * d_c * dt), (frames, n, 3))
+    steps = np.concatenate(
+        [common + rng.normal(0, np.sqrt(2 * d_li * dt), (frames, n, 3)),
+         common + rng.normal(0, np.sqrt(2 * d_a * dt), (frames, n, 3))], axis=1,
+    )  # fmt: skip
+    x = np.concatenate([np.cumsum(steps, axis=0), np.zeros((frames, 1, 3))], axis=1)
+    doc = spec_doc(n, box)
+    heavy = {"name": "S", "element": "Xe", "mass_amu": 1.0e7, "charge_e": 0.0}
+    doc["molecule_types"]["S"] = {"formal_charge_e": 0, "atoms": [heavy], "bonds": []}
+    doc["components"].append({"molecule_type": "S", "count": 1})
+    doc["atom_count"] += 1
+    write_h5md(tmp_path / "t.h5", doc, np.arange(frames) * dt, x, box)
+    # Brownian from the first lag: a short fit window keeps the noise of the collective
+    # (one-per-block) cross term small; with the default window it is about 40 % here
+    out = transport(read_h5md(tmp_path / "t.h5"), 300.0, "Li", "A", window=FitWindow(0.0005, 0.006))
+    kt = c.BOLTZMANN_J_PER_K * 300.0
+    volume = (box * c.NM_IN_M) ** 3
+    expected = -2 * c.ELEMENTARY_CHARGE_C**2 * n * d_c * c.NM2_PER_PS_IN_M2_PER_S / (kt * volume)
+    pm = out["kappa_distinct_pm_S_per_m"]
+    # over seeds 11–14, 21–24: ratio 0.99 ± 0.06 (no bias); 15 % is about 2.5σ
+    assert pm["mean"] == pytest.approx(expected, rel=0.15)
+    ne = out["kappa_NE_S_per_m"]["mean"]
+    for k in ("distinct_pp", "distinct_mm"):
+        assert abs(out[f"kappa_{k}_S_per_m"]["mean"]) < 0.1 * ne
+    assert out["ionicity"]["mean"] < 0.8
 
 
 def test_ideal_gas_rdf_is_one_and_coordination_counts_neighbours() -> None:

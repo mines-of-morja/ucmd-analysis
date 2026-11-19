@@ -6,6 +6,11 @@
   L_ij = 1/(6 k_B T V) · d/dt ⟨Σ_a Δr_a^(i)(t) · Σ_b Δr_b^(j)(t)⟩.
 - Conductivity κ = e² Σ_ij z_i z_j L_ij; COM-frame transference number
   t₊ = (z₊² L₊₊ + z₊z₋ L₊₋)/Σ_ij z_i z_j L_ij; Nernst–Einstein κ_NE = e²/(V k_B T) Σ_i N_i z_i² D_i.
+- Decomposition (calculation plan D1): L_ii = N_i D_i/(k_B T V) + L_ii^d, the self part from the
+  per-ion MSD and the distinct part from the cross terms a ≠ b; L₊₋ is distinct only. Then
+  κ = κ_NE + e²(z₊² L₊₊^d + z₋² L₋₋^d + 2 z₊z₋ L₊₋) exactly, block by block, with the same fit
+  window. A negative distinct sum (ionicity < 1) means correlated ion motion lowers κ; which
+  term dominates tells ion pairing (L₊₋ > 0) from like-ion anticorrelation.
 - Charges: z are the formal charges (±1) unless `charges="scaled"`, then the force field's
   (scaled by ζ). Which one a reference used must be checked (validation plan, pitfall).
 
@@ -77,11 +82,14 @@ def transport(traj: Trajectory, temperature_K: float, cation: str, anion: str, *
             d[n] = slope(lags, m, window) / 6.0 * c.NM2_PER_PS_IN_M2_PER_S
             add(f"D_{n}_m2_per_s", d[n])
         sums = {n: com[n][block].sum(axis=1) for n in ions}  # (frames, 3) nm
-        lij = {}
+        lij, lself = {}, {}
         for a, b in ((cation, cation), (anion, anion), (cation, anion)):
             m = msd_series(sums[a]) if a == b else cross_msd(sums[a], sums[b])
             s = slope(lags, m, window) * c.NM2_PER_PS_IN_M2_PER_S  # m²/s
             lij[(a, b)] = s / (6.0 * kt * volume_m3)  # 1/(J m s)
+            if a == b:  # self part: Σ_a |Δr_a|², the same series D_a comes from
+                s = slope(lags, msd_series(com[a][block]), window) * c.NM2_PER_PS_IN_M2_PER_S
+                lself[a] = s / (6.0 * kt * volume_m3)
         lpp, lmm, lpm = lij[(cation, cation)], lij[(anion, anion)], lij[(cation, anion)]
         zp, zm = z[cation], z[anion]
         e2 = c.ELEMENTARY_CHARGE_C**2
@@ -97,6 +105,12 @@ def transport(traj: Trajectory, temperature_K: float, cation: str, anion: str, *
         add("kappa_NE_S_per_m", kappa_ne)
         add("ionicity", kappa / kappa_ne)
         add("t_plus_COM", (zp * zp * lpp + zp * zm * lpm) / total)
+        # D1: κ = κ_self,+ + κ_self,− + κ_d,++ + κ_d,−− + κ_d,+− (S/m)
+        add("kappa_self_cation_S_per_m", e2 * zp * zp * lself[cation])
+        add("kappa_self_anion_S_per_m", e2 * zm * zm * lself[anion])
+        add("kappa_distinct_pp_S_per_m", e2 * zp * zp * (lpp - lself[cation]))
+        add("kappa_distinct_mm_S_per_m", e2 * zm * zm * (lmm - lself[anion]))
+        add("kappa_distinct_pm_S_per_m", e2 * 2 * zp * zm * lpm)
     out = {k: dict(zip(("mean", "sem"), mean_sem(v), strict=True)) for k, v in results.items()}
     out["_meta"] = {
         "temperature_K": temperature_K,
