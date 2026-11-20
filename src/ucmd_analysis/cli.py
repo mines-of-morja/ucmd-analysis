@@ -20,6 +20,8 @@ import numpy as np
 
 from . import constants as c
 from .association import clusters_with_blocks, contacts, shell_composition, with_blocks
+from .dielectric import dielectric
+from .hvap import hvap, potential_series
 from .io import read_h5md
 from .structure import coordination, rdf
 from .transport import FitWindow, transport
@@ -55,7 +57,9 @@ def main(argv: list[str] | None = None) -> int:
     cl = sub.add_parser("clusters")
     sh = sub.add_parser("shell")
     rs = sub.add_parser("residence")
-    for p in (t, r, d, cl, sh, rs):
+    di = sub.add_parser("dielectric", help="static ε from dipole fluctuations (A7)")
+    hv = sub.add_parser("hvap", help="enthalpy of vaporization from two thermo tables (A5)")
+    for p in (t, r, d, cl, sh, rs, di):
         p.add_argument("trajectory")
         p.add_argument("--skip-ps", type=float, default=0.0)
     t.add_argument("--temperature-K", type=float, required=True)
@@ -82,7 +86,24 @@ def main(argv: list[str] | None = None) -> int:
     rs.add_argument("--a", default="Li:Li")
     rs.add_argument("--b", required=True)
     rs.add_argument("--tstar-ps", type=float, default=0.0)
+    di.add_argument("--temperature-K", type=float, required=True)
+    di.add_argument("--molecules", help="comma-separated neutral molecule types (default: all)")
+    di.add_argument("--blocks", type=int, default=5)
+    hv.add_argument("--liquid", required=True, help="thermo table of the liquid run")
+    hv.add_argument("--molecules", type=int, required=True, help="molecules in the liquid box")
+    hv.add_argument("--gas", required=True, help="thermo table of one molecule alone")
+    hv.add_argument("--temperature-K", type=float, required=True)
+    hv.add_argument("--skip-ps", type=float, default=0.0, help="skipped in both tables")
+    hv.add_argument("--blocks", type=int, default=5)
     args = ap.parse_args(argv)
+    if args.command == "hvap":
+        out = hvap(potential_series(args.liquid, args.skip_ps), args.molecules,
+                   potential_series(args.gas, args.skip_ps), args.temperature_K,
+                   n_blocks=args.blocks)  # fmt: skip
+        out.update({"liquid": args.liquid, "gas": args.gas, "skip_ps": args.skip_ps})
+        json.dump(out, sys.stdout, indent=1)
+        print()
+        return 0
     traj = read_h5md(args.trajectory)
     k = _skip(traj, args.skip_ps)
     if k:
@@ -122,6 +143,9 @@ def main(argv: list[str] | None = None) -> int:
             per[spec] = contacts(traj.positions_nm, traj.boxes_nm, a, b, used[spec])
         out = shell_composition(per)
         out.update({"a": args.a, "r_cut_nm": used, "frames": len(traj)})
+    elif args.command == "dielectric":
+        types = args.molecules.split(",") if args.molecules else None
+        out = dielectric(traj, args.temperature_K, molecule_types=types, blocks=args.blocks)
     elif args.command == "residence":
         a, b = _group(traj.system, args.a), _group(traj.system, args.b)
         r_cut = _r_cut(traj, a, b, args.r_cut_nm)

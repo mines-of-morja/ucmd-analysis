@@ -16,6 +16,8 @@ not depend on the engine that produced the trajectory.
 | `ucmd-analyze clusters TRAJ.h5` | Li⁺–PF₆⁻ cluster populations (free, pairs, triple ions, …) |
 | `ucmd-analyze shell TRAJ.h5 --b EC:O:1 --b EMC:O:1 --b PF6:P` | first-shell composition of Li⁺ |
 | `ucmd-analyze residence TRAJ.h5 --b EC:O:1` | intermittent and continuous residence times |
+| `ucmd-analyze dielectric TRAJ.h5 --temperature-K 298.15` | static ε from the total dipole of the neutral molecules (tin-foil boundaries) |
+| `ucmd-analyze hvap --liquid L.tsv --molecules N --gas G.tsv --temperature-K T` | ΔH_vap = ⟨U_gas⟩ − ⟨U_liq⟩/N + RT from two thermo tables |
 
 Every number carries a block error (`--blocks`, default 5). Contact cutoffs default to the first
 minimum of g(r) and are reported. Atom groups are `MOLECULE:ELEMENT[:BONDS]`, e.g. `EC:O:1` for

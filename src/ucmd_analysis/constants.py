@@ -9,6 +9,7 @@ from typing import Final
 AVOGADRO_PER_MOL: Final = 6.02214076e23
 BOLTZMANN_J_PER_K: Final = 1.380649e-23
 ELEMENTARY_CHARGE_C: Final = 1.602176634e-19
+VACUUM_PERMITTIVITY_F_PER_M: Final = 8.8541878128e-12  # CODATA 2018 (measured, not exact)
 
 NM_IN_M: Final = 1e-9
 PS_IN_S: Final = 1e-12
@@ -17,6 +18,13 @@ M2_PER_S_IN_CM2_PER_S: Final = 1e4
 S_PER_M_IN_MS_PER_CM: Final = 10.0  # 1 S/m = 10 mS/cm
 AMU_IN_G: Final = 1.0 / AVOGADRO_PER_MOL  # 1 amu = 1 g/mol / N_A
 NM3_IN_CM3: Final = 1e-21
+KJMOL_IN_J: Final = 1e3 / AVOGADRO_PER_MOL  # 1 kJ/mol per particle, in J
+BOLTZMANN_KJMOL_PER_K: Final = BOLTZMANN_J_PER_K / KJMOL_IN_J
+GAS_CONSTANT_KJ_PER_MOL_K: Final = BOLTZMANN_KJMOL_PER_K
+# ε₀ in spec units, e² / (kJ mol⁻¹ nm): 1/(4πε₀) ≈ 138.935 kJ mol⁻¹ nm e⁻²
+EPSILON0_E2_PER_KJMOL_NM: Final = (
+    VACUUM_PERMITTIVITY_F_PER_M / ELEMENTARY_CHARGE_C**2 * KJMOL_IN_J * NM_IN_M
+)
 # Madelung-like constant of the Yeh–Hummer correction for a cubic box (dimensionless):
 # D∞ = D_PBC + k_B T ξ / (6π η L). Yeh & Hummer, J. Phys. Chem. B 108, 15873 (2004).
 YEH_HUMMER_XI_CUBIC: Final = 2.837297
