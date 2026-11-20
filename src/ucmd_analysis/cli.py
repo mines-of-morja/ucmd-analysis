@@ -26,6 +26,7 @@ from .io import read_h5md
 from .structure import coordination, rdf
 from .transport import FitWindow, transport
 from .uncertainty import blocks, mean_sem
+from .viscosity import green_kubo, read_tensor, shear_components
 
 
 def _skip(traj, skip_ps: float):
@@ -59,6 +60,12 @@ def main(argv: list[str] | None = None) -> int:
     rs = sub.add_parser("residence")
     di = sub.add_parser("dielectric", help="static ε from dipole fluctuations (A7)")
     hv = sub.add_parser("hvap", help="enthalpy of vaporization from two thermo tables (A5)")
+    vi = sub.add_parser("viscosity", help="Green–Kubo shear viscosity from a thermo table (A6)")
+    vi.add_argument("thermo", help="thermo table with the pressure-tensor columns (spec 0.1.1)")
+    vi.add_argument("--temperature-K", type=float, required=True)
+    vi.add_argument("--skip-ps", type=float, default=0.0)
+    vi.add_argument("--max-lag-ps", type=float, default=5.0)
+    vi.add_argument("--blocks", type=int, default=5)
     for p in (t, r, d, cl, sh, rs, di):
         p.add_argument("trajectory")
         p.add_argument("--skip-ps", type=float, default=0.0)
@@ -96,6 +103,17 @@ def main(argv: list[str] | None = None) -> int:
     hv.add_argument("--skip-ps", type=float, default=0.0, help="skipped in both tables")
     hv.add_argument("--blocks", type=int, default=5)
     args = ap.parse_args(argv)
+    if args.command == "viscosity":
+        t, p, volume = read_tensor(args.thermo, args.skip_ps)
+        dt = float(np.median(np.diff(t)))
+        out = green_kubo(shear_components(p), dt, volume, args.temperature_K,
+                         n_blocks=args.blocks, max_lag_ps=args.max_lag_ps)  # fmt: skip
+        eta = out["viscosity_Pa_s"]
+        out["viscosity_mPa_s"] = {"mean": eta["mean"] * 1e3, "sem": eta["sem"] * 1e3}
+        out.update({"thermo": args.thermo, "skip_ps": args.skip_ps})
+        json.dump(out, sys.stdout, indent=1)
+        print()
+        return 0
     if args.command == "hvap":
         out = hvap(potential_series(args.liquid, args.skip_ps), args.molecules,
                    potential_series(args.gas, args.skip_ps), args.temperature_K,

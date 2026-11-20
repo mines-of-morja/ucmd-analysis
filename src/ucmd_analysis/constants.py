@@ -18,6 +18,7 @@ M2_PER_S_IN_CM2_PER_S: Final = 1e4
 S_PER_M_IN_MS_PER_CM: Final = 10.0  # 1 S/m = 10 mS/cm
 AMU_IN_G: Final = 1.0 / AVOGADRO_PER_MOL  # 1 amu = 1 g/mol / N_A
 NM3_IN_CM3: Final = 1e-21
+BAR_IN_PA: Final = 1e5
 KJMOL_IN_J: Final = 1e3 / AVOGADRO_PER_MOL  # 1 kJ/mol per particle, in J
 BOLTZMANN_KJMOL_PER_K: Final = BOLTZMANN_J_PER_K / KJMOL_IN_J
 GAS_CONSTANT_KJ_PER_MOL_K: Final = BOLTZMANN_KJMOL_PER_K
