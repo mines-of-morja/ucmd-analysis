@@ -1,6 +1,7 @@
 """`ucmd-analyze`: transport, structure and density of a spec H5MD trajectory (JSON output).
 
     ucmd-analyze transport TRAJ.h5 --temperature-K 293.15 --cation Li --anion PF6 [--skip-ps 0]
+    ucmd-analyze diffusion TRAJ.h5 --temperature-K 298.15 [--species water] [--viscosity-mPa-s 0.77]
     ucmd-analyze rdf TRAJ.h5 --a Li:Li --b EC:O:1 [--r-max-nm 1.0] [--skip-ps 0]
     ucmd-analyze density TRAJ.h5 [--skip-ps 0]
     ucmd-analyze clusters TRAJ.h5 --cation Li:Li --anion PF6:P [--r-cut-nm auto]
@@ -24,7 +25,7 @@ from .dielectric import dielectric
 from .hvap import hvap, potential_series
 from .io import read_h5md
 from .structure import coordination, rdf
-from .transport import FitWindow, transport
+from .transport import FitWindow, diffusion, transport
 from .uncertainty import blocks, mean_sem
 from .viscosity import green_kubo, read_tensor, shear_components
 
@@ -53,6 +54,7 @@ def main(argv: list[str] | None = None) -> int:
                                  formatter_class=argparse.RawDescriptionHelpFormatter)  # fmt: skip
     sub = ap.add_subparsers(dest="command", required=True)
     t = sub.add_parser("transport")
+    df = sub.add_parser("diffusion", help="self-diffusion of neutral species, e.g. pure water")
     r = sub.add_parser("rdf")
     d = sub.add_parser("density")
     cl = sub.add_parser("clusters")
@@ -66,7 +68,7 @@ def main(argv: list[str] | None = None) -> int:
     vi.add_argument("--skip-ps", type=float, default=0.0)
     vi.add_argument("--max-lag-ps", type=float, default=5.0)
     vi.add_argument("--blocks", type=int, default=5)
-    for p in (t, r, d, cl, sh, rs, di):
+    for p in (t, df, r, d, cl, sh, rs, di):
         p.add_argument("trajectory")
         p.add_argument("--skip-ps", type=float, default=0.0)
     t.add_argument("--temperature-K", type=float, required=True)
@@ -77,6 +79,12 @@ def main(argv: list[str] | None = None) -> int:
     t.add_argument("--charges", choices=["formal", "scaled"], default="formal")
     t.add_argument("--viscosity-mPa-s", type=float, default=None,
                    help="adds Yeh–Hummer-corrected D; record the source of η")  # fmt: skip
+    df.add_argument("--temperature-K", type=float, required=True)
+    df.add_argument("--species", help="comma-separated molecule types (default: all)")
+    df.add_argument("--blocks", type=int, default=5)
+    df.add_argument("--fit", type=float, nargs=2, default=(0.1, 0.5))
+    df.add_argument("--viscosity-mPa-s", type=float, default=None,
+                    help="adds Yeh–Hummer-corrected D; record the source of η")  # fmt: skip
     r.add_argument("--a", required=True)
     r.add_argument("--b", required=True)
     r.add_argument("--r-max-nm", type=float, default=1.0)
@@ -130,6 +138,12 @@ def main(argv: list[str] | None = None) -> int:
         out = transport(
             traj, args.temperature_K, args.cation, args.anion, n_blocks=args.blocks,
             window=FitWindow(*args.fit), charges=args.charges,
+            viscosity_Pa_s=None if args.viscosity_mPa_s is None else args.viscosity_mPa_s * 1e-3,
+        )  # fmt: skip
+    elif args.command == "diffusion":
+        out = diffusion(
+            traj, args.temperature_K, species=args.species.split(",") if args.species else None,
+            n_blocks=args.blocks, window=FitWindow(*args.fit),
             viscosity_Pa_s=None if args.viscosity_mPa_s is None else args.viscosity_mPa_s * 1e-3,
         )  # fmt: skip
     elif args.command == "rdf":

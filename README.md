@@ -11,6 +11,7 @@ not depend on the engine that produced the trajectory.
 | Command | What it gives |
 |---|---|
 | `ucmd-analyze transport TRAJ.h5 --temperature-K T [--viscosity-mPa-s η]` | D of every species (Yeh–Hummer-corrected with η); Onsager L₊₊, L₋₋, L₊₋; κ, κ_NE, ionicity, t₊ (COM frame); κ split into self and distinct parts |
+| `ucmd-analyze diffusion TRAJ.h5 --temperature-K T [--species A,B] [--viscosity-mPa-s η]` | D of neutral species such as pure water (block errors; Yeh–Hummer-corrected with η, cubic boxes). `transport` refuses neutral ions and points here |
 | `ucmd-analyze rdf TRAJ.h5 --a Li:Li --b EC:O:1` | g(r), first peak, coordination number |
 | `ucmd-analyze density TRAJ.h5` | density |
 | `ucmd-analyze clusters TRAJ.h5` | Li⁺–PF₆⁻ cluster populations (free, pairs, triple ions, …) |

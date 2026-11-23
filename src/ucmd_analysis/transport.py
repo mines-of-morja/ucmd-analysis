@@ -54,22 +54,72 @@ def beta(lags_ps: np.ndarray, msd: np.ndarray) -> np.ndarray:
         return np.gradient(np.log(msd[1:]), np.log(lags_ps[1:]))
 
 
+def _frame_interval(traj: Trajectory) -> np.ndarray:
+    dt = np.diff(traj.times_ps)
+    if len(dt) == 0 or not np.allclose(dt, dt[0], rtol=1e-6):
+        raise ValueError("frames must be equally spaced")
+    return dt
+
+
+def _check_viscosity(traj: Trajectory, viscosity_Pa_s: float | None) -> None:
+    """The Yeh–Hummer correction needs a positive η and a cubic box."""
+    if viscosity_Pa_s is None:
+        return
+    if not viscosity_Pa_s > 0:
+        raise ValueError("the viscosity must be positive")
+    h = traj.boxes_nm
+    off = h - np.einsum("fii->fi", h)[:, :, None] * np.eye(3)
+    edges = np.einsum("fii->fi", h)
+    if np.abs(off).max() > 1e-9 or np.ptp(edges, axis=1).max() > 1e-6 * edges.max():
+        raise ValueError("the Yeh–Hummer correction here is for cubic boxes only")
+
+
+def diffusion(traj: Trajectory, temperature_K: float, *, species: list[str] | None = None,
+              n_blocks: int = 5, window: FitWindow | None = None,
+              viscosity_Pa_s: float | None = None) -> dict:  # fmt: skip
+    """Self-diffusion coefficient D of each species (default: all), from the molecules' centres of
+    mass in the barycentric frame, with block errors; no charges are needed, so it serves pure
+    solvents. With a viscosity the Yeh–Hummer value D_YH = D + k_B T ξ/(6π η L) is added (cubic
+    boxes; η is an input whose source the caller records). Keys as in `transport`."""
+    window = window or FitWindow()
+    dt = _frame_interval(traj)
+    _check_viscosity(traj, viscosity_Pa_s)
+    sys = traj.system
+    names = species or list(sys.species)
+    unknown = [n for n in names if n not in sys.species]
+    if unknown:
+        raise ValueError(f"no species {unknown[0]!r}; the trajectory has {list(sys.species)}")
+    kt = c.BOLTZMANN_J_PER_K * temperature_K
+    results: dict[str, list[float]] = {}
+    com = {n: barycentric(traj, sys.species[n]) for n in names}
+    for block in blocks(len(traj), n_blocks):
+        lags = np.arange(block.stop - block.start) * dt[0]
+        edge_m = float(traj.volumes_nm3()[block].mean()) ** (1 / 3) * c.NM_IN_M
+        for n in names:
+            d = slope(lags, self_msd(com[n][block]), window) / 6.0 * c.NM2_PER_PS_IN_M2_PER_S
+            results.setdefault(f"D_{n}_m2_per_s", []).append(d)
+            if viscosity_Pa_s is not None:
+                shift = kt * c.YEH_HUMMER_XI_CUBIC / (6 * np.pi * viscosity_Pa_s * edge_m)
+                results.setdefault(f"D_{n}_YH_m2_per_s", []).append(d + shift)
+    out = {k: dict(zip(("mean", "sem"), mean_sem(v), strict=True)) for k, v in results.items()}
+    out["_meta"] = {
+        "temperature_K": temperature_K,
+        "frames": len(traj),
+        "frame_interval_ps": float(dt[0]),
+        "blocks": n_blocks,
+        "fit_window_fraction": [window.start, window.stop],
+        "viscosity_Pa_s": viscosity_Pa_s,
+    }
+    return out
+
+
 def transport(traj: Trajectory, temperature_K: float, cation: str, anion: str, *,
               n_blocks: int = 5, window: FitWindow | None = None,
               charges: str = "formal", viscosity_Pa_s: float | None = None) -> dict:  # fmt: skip
     """D of every species, L_ij, κ, t₊ (COM frame), κ_NE and the ionicity, with block errors."""
     window = window or FitWindow()
-    if viscosity_Pa_s is not None:
-        if not viscosity_Pa_s > 0:
-            raise ValueError("the viscosity must be positive")
-        h = traj.boxes_nm
-        off = h - np.einsum("fii->fi", h)[:, :, None] * np.eye(3)
-        edges = np.einsum("fii->fi", h)
-        if np.abs(off).max() > 1e-9 or np.ptp(edges, axis=1).max() > 1e-6 * edges.max():
-            raise ValueError("the Yeh–Hummer correction here is for cubic boxes only")
-    dt = np.diff(traj.times_ps)
-    if len(dt) == 0 or not np.allclose(dt, dt[0], rtol=1e-6):
-        raise ValueError("frames must be equally spaced")
+    dt = _frame_interval(traj)
+    _check_viscosity(traj, viscosity_Pa_s)
     sys = traj.system
     names = list(sys.species)
     ions = (cation, anion)
@@ -77,6 +127,13 @@ def transport(traj: Trajectory, temperature_K: float, cation: str, anion: str, *
         n: (sys.species[n].formal_charge if charges == "formal" else sys.species[n].charge)
         for n in ions
     }  # fmt: skip
+    for n in ions:
+        if sys.species[n].count == 0 or abs(z[n]) < 1e-9:
+            raise ValueError(
+                f"{n} is neutral (charge {z[n]:+.3f} e): conductivity and transference numbers "
+                "need a charged cation and anion; for a neutral species use `diffusion` "
+                "(ucmd-analyze diffusion)"
+            )
     com = {n: barycentric(traj, sys.species[n]) for n in names}
     kt = c.BOLTZMANN_J_PER_K * temperature_K
     results: dict[str, list[float]] = {}
