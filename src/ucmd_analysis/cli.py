@@ -2,6 +2,7 @@
 
     ucmd-analyze transport TRAJ.h5 --temperature-K 293.15 --cation Li --anion PF6 [--skip-ps 0]
     ucmd-analyze onsager-gk TRAJ.h5 --temperature-K 293.15 --plateau-ps 1 2 --max-lag-ps 3
+    ucmd-analyze tdf TRAJ.h5 --k-max-per-nm 4 [--form matrix|scalar|coulomb]
     ucmd-analyze diffusion TRAJ.h5 --temperature-K 298.15 [--species water] [--viscosity-mPa-s 0.77]
     ucmd-analyze rdf TRAJ.h5 --a Li:Li --b EC:O:1 [--r-max-nm 1.0] [--skip-ps 0]
     ucmd-analyze density TRAJ.h5 [--skip-ps 0]
@@ -27,6 +28,7 @@ from .green_kubo import onsager_green_kubo
 from .hvap import hvap, potential_series
 from .io import read_h5md
 from .structure import coordination, rdf
+from .thermodynamic_factor import thermodynamic_factor
 from .transport import FitWindow, diffusion, transport
 from .uncertainty import blocks, mean_sem
 from .viscosity import green_kubo, read_tensor, shear_components
@@ -65,13 +67,14 @@ def main(argv: list[str] | None = None) -> int:
     di = sub.add_parser("dielectric", help="static ε from dipole fluctuations (A7)")
     hv = sub.add_parser("hvap", help="enthalpy of vaporization from two thermo tables (A5)")
     gk = sub.add_parser("onsager-gk", help="Green–Kubo check of L_ij (needs H5MD velocities)")
+    td = sub.add_parser("tdf", help="thermodynamic factor from structure factors (A1.7)")
     vi = sub.add_parser("viscosity", help="Green–Kubo shear viscosity from a thermo table (A6)")
     vi.add_argument("thermo", help="thermo table with the pressure-tensor columns (spec 0.1.1)")
     vi.add_argument("--temperature-K", type=float, required=True)
     vi.add_argument("--skip-ps", type=float, default=0.0)
     vi.add_argument("--max-lag-ps", type=float, default=5.0)
     vi.add_argument("--blocks", type=int, default=5)
-    for p in (t, df, r, d, cl, sh, rs, di, gk):
+    for p in (t, df, r, d, cl, sh, rs, di, gk, td):
         p.add_argument("trajectory")
         p.add_argument("--skip-ps", type=float, default=0.0)
     t.add_argument("--temperature-K", type=float, required=True)
@@ -87,6 +90,12 @@ def main(argv: list[str] | None = None) -> int:
                         "(record its source)")  # fmt: skip
     t.add_argument("--nu-e-err-cm3-per-mol", type=float, default=None,
                    help="its error; needs --nu-e-cm3-per-mol")  # fmt: skip
+    td.add_argument("--cation", default="Li")
+    td.add_argument("--anion", default="PF6")
+    td.add_argument("--k-max-per-nm", type=float, required=True,
+                    help="largest k of the fit; scan it, the limit must not move")  # fmt: skip
+    td.add_argument("--form", choices=["matrix", "scalar", "coulomb"], default="matrix")
+    td.add_argument("--blocks", type=int, default=5)
     gk.add_argument("--temperature-K", type=float, required=True)
     gk.add_argument("--cation", default="Li")
     gk.add_argument("--anion", default="PF6")
@@ -169,6 +178,10 @@ def main(argv: list[str] | None = None) -> int:
             max_lag_ps=args.max_lag_ps, n_blocks=args.blocks, window=FitWindow(*args.fit),
             charges=args.charges,
         )  # fmt: skip
+        out.update({"trajectory": args.trajectory, "skip_ps": args.skip_ps})
+    elif args.command == "tdf":
+        out = thermodynamic_factor(traj, args.cation, args.anion, k_max_nm=args.k_max_per_nm,
+                                   n_blocks=args.blocks, form=args.form)  # fmt: skip
         out.update({"trajectory": args.trajectory, "skip_ps": args.skip_ps})
     elif args.command == "diffusion":
         out = diffusion(
