@@ -1,0 +1,46 @@
+# A1.7 target 1 (README.md). Reduced units of Cheng 2022 on Rahman's argon: dt = 1e-3 tau, T = 1.2,
+# P = 2, cutoff 2^(1/6) sigma; make_system.py prints the conversions.
+spec_version = "0.1.2"
+system = "out/nvt-start.ucsys"
+title = "A1.7 target 1: NVT at the mean NPT volume"
+
+[run]
+integrator = "velocity-verlet"
+timestep_fs = 2.151388
+steps = 10000000
+seed = 20223
+
+[velocities]
+generate = "maxwell-boltzmann"
+temperature_K = 144.0
+
+[momentum]
+remove_com_every = 1000
+
+[thermostat]
+kind = "csvr"
+temperature_K = 144.0
+tau_ps = 1.0
+
+[[providers]]
+kind = "lennard-jones"
+cutoff_nm = 0.3816370964
+cutoff_mode = "potential-shift"
+dispersion_correction = false
+neighbor_skin_nm = 0.06
+
+[output]
+directory = "out/nvt"
+
+[output.thermo]
+file = "thermo.tsv"
+every = 500
+
+[output.trajectory]
+file = "trajectory.h5"
+every = 2000
+precision = "float32"
+
+[output.checkpoint]
+file = "checkpoint.ucchk"
+every = 100000

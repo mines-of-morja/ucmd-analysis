@@ -103,6 +103,7 @@ class Trajectory:
     positions_nm: np.ndarray  # (frames, atoms, 3), unwrapped
     boxes_nm: np.ndarray  # (frames, 3, 3), rows a, b, c
     provenance: dict
+    velocities_nm_per_ps: np.ndarray | None = None  # (frames, atoms, 3), only if asked for
 
     def __len__(self) -> int:
         return len(self.steps)
@@ -112,8 +113,9 @@ class Trajectory:
 
 
 def read_h5md(path: Path | str, *, start: int = 0, stop: int | None = None,
-              stride: int = 1) -> Trajectory:  # fmt: skip
-    """Frames [start:stop:stride] of a spec H5MD trajectory."""
+              stride: int = 1, velocities: bool = False) -> Trajectory:  # fmt: skip
+    """Frames [start:stop:stride] of a spec H5MD trajectory. Velocities are optional in the spec
+    profile and are read only if asked for; a file without them is then an error."""
     import h5py
 
     with h5py.File(path, "r") as fh:
@@ -122,6 +124,7 @@ def read_h5md(path: Path | str, *, start: int = 0, stop: int | None = None,
         sel = slice(start, stop, stride)
         steps = np.asarray(pos["step"][sel])
         positions = np.asarray(pos["value"][sel], dtype=np.float64)
+        vel = _velocities(fh, path, sel, steps) if velocities else None
         box_g = fh["particles/all/box/edges"]
         box_steps = np.asarray(box_g["step"][()])
         boxes = np.asarray(box_g["value"][()], dtype=np.float64)
@@ -137,7 +140,20 @@ def read_h5md(path: Path | str, *, start: int = 0, stop: int | None = None,
             positions,
             boxes[np.clip(idx, 0, len(boxes) - 1)],
             prov,
+            vel,
         )
+
+
+def _velocities(fh, path, sel: slice, steps: np.ndarray) -> np.ndarray:
+    if "particles/all/velocity" not in fh:
+        raise ValueError(
+            f"{path}: no velocities; run with [output.trajectory] velocities = true and a stride "
+            "that resolves the velocity correlation"
+        )
+    group = fh["particles/all/velocity"]
+    if not np.array_equal(np.asarray(group["step"][sel]), steps):
+        raise ValueError(f"{path}: velocities and positions are not stored at the same steps")
+    return np.asarray(group["value"][sel], dtype=np.float64)
 
 
 def _text(value) -> str:
