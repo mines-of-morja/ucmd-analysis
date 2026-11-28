@@ -12,6 +12,7 @@ not depend on the engine that produced the trajectory.
 |---|---|
 | `ucmd-analyze transport TRAJ.h5 --temperature-K T [--viscosity-mPa-s η] [--nu-e-cm3-per-mol ν_e]` | D of every species (Yeh–Hummer-corrected with η); Onsager L₊₊, L₋₋, L₊₋; κ, κ_NE, ionicity; t₊ in the COM and SOL frames and, with the salt's partial molar volume ν_e, in the VOL frame (conventions A and B, ADR 0013); κ split into self and distinct parts |
 | `ucmd-analyze diffusion TRAJ.h5 --temperature-K T [--species A,B] [--viscosity-mPa-s η]` | D of neutral species such as pure water (block errors; Yeh–Hummer-corrected with η, cubic boxes). `transport` refuses neutral ions and points here |
+| `ucmd-analyze onsager-gk TRAJ.h5 --temperature-K T --plateau-ps LO HI --max-lag-ps M` | L_ij, κ, t₊ (COM) from velocities (Green–Kubo) next to the Einstein form over the same lags: a check of the analysis, not an independent estimate. Needs H5MD velocities at a fine stride |
 | `ucmd-analyze rdf TRAJ.h5 --a Li:Li --b EC:O:1` | g(r), first peak, coordination number |
 | `ucmd-analyze density TRAJ.h5` | density |
 | `ucmd-analyze clusters TRAJ.h5` | Li⁺–PF₆⁻ cluster populations (free, pairs, triple ions, …) |
@@ -25,8 +26,7 @@ Every number carries a block error (`--blocks`, default 5). Contact cutoffs defa
 minimum of g(r) and are reported. Atom groups are `MOLECULE:ELEMENT[:BONDS]`, e.g. `EC:O:1` for
 the carbonyl oxygen. Output is JSON.
 
-**Planned** (PLAN.md, track A): Green–Kubo Onsager coefficients, per-solvent
-frames of t₊.
+**Planned** (PLAN.md, track A): per-solvent frames of t₊, thermodynamic factor.
 
 ## Development
 
