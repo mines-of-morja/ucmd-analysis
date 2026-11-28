@@ -14,6 +14,9 @@
 - Finite size (optional, cubic boxes only): with a viscosity η, the self-diffusion coefficients
   are also reported corrected, D∞ = D_PBC + k_B T ξ/(6π η L) (Yeh & Hummer 2004). η is an input
   whose source the caller records; the collective L_ij are not corrected.
+- Reference frames (frames.py; ADR 0013): every t₊ names its frame in its key. `t_plus_COM` always;
+  `t_plus_SOL` for a 1:1 salt in neutral solvent; `t_plus_VOL_A` and `t_plus_VOL_B` (the two
+  ion-volume conventions) when the partial molar volume ν_e of the salt is given.
 - Charges: z are the formal charges (±1) unless `charges="scaled"`, then the force field's
   (scaled by ζ). Which one a reference used must be checked (validation plan, pitfall).
 
@@ -23,29 +26,22 @@ reported as mean ± standard error.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 import numpy as np
 
 from . import constants as c
+from .fit import FitWindow, slope
+from .frames import (
+    ION_VOLUME_CONVENTIONS,
+    SolventFrame,
+    frame_t_plus,
+    sol_from_com,
+    solvent_frame,
+    vol_from_sol,
+)
 from .io import Trajectory
 from .molecules import barycentric
 from .msd import cross_msd, msd_series, self_msd
 from .uncertainty import blocks, mean_sem
-
-
-@dataclass(frozen=True)
-class FitWindow:
-    """Fit window as fractions of the longest lag of a block."""
-
-    start: float = 0.1
-    stop: float = 0.5
-
-
-def slope(lags_ps: np.ndarray, y: np.ndarray, window: FitWindow) -> float:
-    n = len(lags_ps)
-    lo, hi = max(1, int(window.start * n)), max(2, int(window.stop * n))
-    return float(np.polyfit(lags_ps[lo:hi], y[lo:hi], 1)[0])
 
 
 def beta(lags_ps: np.ndarray, msd: np.ndarray) -> np.ndarray:
@@ -115,11 +111,27 @@ def diffusion(traj: Trajectory, temperature_K: float, *, species: list[str] | No
 
 def transport(traj: Trajectory, temperature_K: float, cation: str, anion: str, *,
               n_blocks: int = 5, window: FitWindow | None = None,
-              charges: str = "formal", viscosity_Pa_s: float | None = None) -> dict:  # fmt: skip
-    """D of every species, L_ij, κ, t₊ (COM frame), κ_NE and the ionicity, with block errors."""
+              charges: str = "formal", viscosity_Pa_s: float | None = None,
+              nu_e_cm3_per_mol: float | None = None, nu_e_err_cm3_per_mol: float | None = None,
+              keep_blocks: bool = False) -> dict:  # fmt: skip
+    """D of every species, L_ij, κ, t₊ (COM, SOL and, with ν_e, VOL frame), κ_NE and the ionicity,
+    with block errors.
+
+    ν_e is the partial molar volume of the salt (cm³/mol), its error optional; the caller records
+    the source. A t₊ in the VOL frame carries its error parts separately: `sem` (blocks),
+    `err_nu_plus` (stated for the convention, else null) and `err_nu_e` (null without an error of
+    ν_e). The parts are partial derivatives times the input error; they are not added up.
+    `keep_blocks` adds the per-block values under `_blocks`."""
     window = window or FitWindow()
     dt = _frame_interval(traj)
     _check_viscosity(traj, viscosity_Pa_s)
+    if nu_e_cm3_per_mol is not None and not nu_e_cm3_per_mol > 0:
+        raise ValueError("nu_e must be positive")
+    if nu_e_err_cm3_per_mol is not None:
+        if nu_e_cm3_per_mol is None:
+            raise ValueError("an error of ν_e needs nu_e_cm3_per_mol")
+        if not nu_e_err_cm3_per_mol > 0:
+            raise ValueError("the error of nu_e must be positive")
     sys = traj.system
     names = list(sys.species)
     ions = (cation, anion)
@@ -134,6 +146,9 @@ def transport(traj: Trajectory, temperature_K: float, cation: str, anion: str, *
                 "need a charged cation and anion; for a neutral species use `diffusion` "
                 "(ucmd-analyze diffusion)"
             )
+    solvent = solvent_frame(sys, cation, anion)
+    if nu_e_cm3_per_mol is not None and not isinstance(solvent, SolventFrame):
+        raise ValueError(f"no VOL frame: {solvent}")
     com = {n: barycentric(traj, sys.species[n]) for n in names}
     kt = c.BOLTZMANN_J_PER_K * temperature_K
     results: dict[str, list[float]] = {}
@@ -177,13 +192,38 @@ def transport(traj: Trajectory, temperature_K: float, cation: str, anion: str, *
         add("kappa_NE_S_per_m", kappa_ne)
         add("ionicity", kappa / kappa_ne)
         add("t_plus_COM", (zp * zp * lpp + zp * zm * lpm) / total)
+        if isinstance(solvent, SolventFrame):
+            r_sol = solvent.displacement(com)[block]
+            sol = frame_t_plus(sums[cation] - sys.species[cation].count * r_sol,
+                               sums[anion] - sys.species[anion].count * r_sol,
+                               lags, window).t_plus  # fmt: skip
+            add("t_plus_SOL", sol)
+            eq2 = sol_from_com(results["t_plus_COM"][-1], solvent.omega_minus, solvent.omega_0)
+            add("_sol_minus_eq2", sol - eq2)
+            c_e = (
+                sys.species[cation].count
+                / c.AVOGADRO_PER_MOL
+                / (volume_m3 / c.NM_IN_M**3 * c.NM3_IN_CM3)
+            )
+            add("_c_e_mol_per_cm3", c_e)
+            if nu_e_cm3_per_mol is not None:
+                if not c_e * nu_e_cm3_per_mol < 1:
+                    raise ValueError(
+                        f"nu_e = {nu_e_cm3_per_mol} cm³/mol gives the salt the whole volume "
+                        f"(c_e nu_e = {c_e * nu_e_cm3_per_mol:.3f})"
+                    )
+                for name, conv in ION_VOLUME_CONVENTIONS.items():
+                    add(f"t_plus_VOL_{name}",
+                        vol_from_sol(sol, c_e, nu_e_cm3_per_mol,
+                                     conv.nu_plus_cm3_per_mol))  # fmt: skip
         # D1: κ = κ_self,+ + κ_self,− + κ_d,++ + κ_d,−− + κ_d,+− (S/m)
         add("kappa_self_cation_S_per_m", e2 * zp * zp * lself[cation])
         add("kappa_self_anion_S_per_m", e2 * zm * zm * lself[anion])
         add("kappa_distinct_pp_S_per_m", e2 * zp * zp * (lpp - lself[cation]))
         add("kappa_distinct_mm_S_per_m", e2 * zm * zm * (lmm - lself[anion]))
         add("kappa_distinct_pm_S_per_m", e2 * 2 * zp * zm * lpm)
-    out = {k: dict(zip(("mean", "sem"), mean_sem(v), strict=True)) for k, v in results.items()}
+    out = {k: dict(zip(("mean", "sem"), mean_sem(v), strict=True)) for k, v in results.items()
+           if not k.startswith("_")}  # fmt: skip
     out["_meta"] = {
         "temperature_K": temperature_K,
         "frames": len(traj),
@@ -194,4 +234,41 @@ def transport(traj: Trajectory, temperature_K: float, cation: str, anion: str, *
         "viscosity_Pa_s": viscosity_Pa_s,
         "z": z,
     }
+    out["_meta"]["frames"] = _frames_meta(
+        out, results, solvent, nu_e_cm3_per_mol, nu_e_err_cm3_per_mol
+    )
+    if keep_blocks:
+        out["_blocks"] = {k: v for k, v in results.items() if not k.startswith("_")}
     return out
+
+
+def _frames_meta(out: dict, results: dict, solvent: SolventFrame | str,
+                 nu_e: float | None, nu_e_err: float | None) -> dict:  # fmt: skip
+    """The inputs of the frames, and the error parts of every t₊^VOL (added to `out`)."""
+    if not isinstance(solvent, SolventFrame):
+        return {"not_reported": f"t_plus_SOL and t_plus_VOL: {solvent}"}
+    c_e = float(np.mean(results["_c_e_mol_per_cm3"]))
+    meta = {
+        "solvent": list(solvent.names),
+        "omega_minus": solvent.omega_minus,
+        "omega_0": solvent.omega_0,
+        "max_abs_SOL_minus_Eq2": float(np.max(np.abs(results["_sol_minus_eq2"]))),
+        "c_e_mol_per_L": c_e * 1e3,
+    }
+    if nu_e is None:
+        meta["not_reported"] = "t_plus_VOL: needs nu_e_cm3_per_mol"
+        return meta
+    for name, conv in ION_VOLUME_CONVENTIONS.items():
+        value = out[f"t_plus_VOL_{name}"]
+        err = conv.err_cm3_per_mol
+        value["err_nu_plus"] = None if err is None else c_e * err
+        dt_dnu_e = c_e * abs(1 - out["t_plus_SOL"]["mean"])
+        value["err_nu_e"] = None if nu_e_err is None else dt_dnu_e * nu_e_err
+    meta["nu_e_cm3_per_mol"] = nu_e
+    meta["nu_e_err_cm3_per_mol"] = nu_e_err
+    meta["nu_plus_cm3_per_mol"] = {
+        k: v.nu_plus_cm3_per_mol for k, v in ION_VOLUME_CONVENTIONS.items()
+    }
+    meta["nu_plus_source"] = {k: v.source for k, v in ION_VOLUME_CONVENTIONS.items()}
+    meta["central_convention"] = "A"
+    return meta

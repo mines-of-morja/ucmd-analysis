@@ -79,6 +79,11 @@ def main(argv: list[str] | None = None) -> int:
     t.add_argument("--charges", choices=["formal", "scaled"], default="formal")
     t.add_argument("--viscosity-mPa-s", type=float, default=None,
                    help="adds Yeh–Hummer-corrected D; record the source of η")  # fmt: skip
+    t.add_argument("--nu-e-cm3-per-mol", type=float, default=None,
+                   help="partial molar volume of the salt: adds t₊ in the VOL frame "
+                        "(record its source)")  # fmt: skip
+    t.add_argument("--nu-e-err-cm3-per-mol", type=float, default=None,
+                   help="its error; needs --nu-e-cm3-per-mol")  # fmt: skip
     df.add_argument("--temperature-K", type=float, required=True)
     df.add_argument("--species", help="comma-separated molecule types (default: all)")
     df.add_argument("--blocks", type=int, default=5)
@@ -111,6 +116,9 @@ def main(argv: list[str] | None = None) -> int:
     hv.add_argument("--skip-ps", type=float, default=0.0, help="skipped in both tables")
     hv.add_argument("--blocks", type=int, default=5)
     args = ap.parse_args(argv)
+    if args.command == "transport":
+        if args.nu_e_err_cm3_per_mol is not None and args.nu_e_cm3_per_mol is None:
+            ap.error("--nu-e-err-cm3-per-mol needs --nu-e-cm3-per-mol")
     if args.command == "viscosity":
         t, p, volume = read_tensor(args.thermo, args.skip_ps)
         dt = float(np.median(np.diff(t)))
@@ -139,6 +147,8 @@ def main(argv: list[str] | None = None) -> int:
             traj, args.temperature_K, args.cation, args.anion, n_blocks=args.blocks,
             window=FitWindow(*args.fit), charges=args.charges,
             viscosity_Pa_s=None if args.viscosity_mPa_s is None else args.viscosity_mPa_s * 1e-3,
+            nu_e_cm3_per_mol=args.nu_e_cm3_per_mol,
+            nu_e_err_cm3_per_mol=args.nu_e_err_cm3_per_mol,
         )  # fmt: skip
     elif args.command == "diffusion":
         out = diffusion(
